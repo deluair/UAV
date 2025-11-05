@@ -1,5 +1,5 @@
 """
-Interactive Dashboard for UAV System
+UAV Industry Economic Insights & Market Projections Dashboard
 """
 
 import streamlit as st
@@ -8,607 +8,850 @@ import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
-import time
-from typing import List, Dict
+from typing import Dict, List
+import sys
+import os
 
-from uav.core.vehicle import AerialVehicle, GroundVehicle, UnderwaterVehicle, State, VehicleConfig
-from uav.simulation.simulator import Simulator, MultiVehicleSimulator
-from uav.core.environment import Environment, Obstacle
-from uav.ai import AStarPlanner, RRTPlanner, NavigationController
-from uav.sensors import GPS, IMU, SensorSuite
-from uav.projection import TrajectoryForecaster
-from uav.communication import FleetManager
+# Add parent directory to path to import analysis module
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+try:
+    from analysis.china_market_analysis import ChinaUAVMarketSimulator
+except ImportError:
+    st.error("Market analysis module not found. Please ensure analysis/china_market_analysis.py exists.")
+    st.stop()
 
 
-st.set_page_config(page_title="UAV System Dashboard", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(
+    page_title="UAV Economic Dashboard",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
 # Initialize session state
-if 'simulation_history' not in st.session_state:
-    st.session_state.simulation_history = []
-if 'vehicles' not in st.session_state:
-    st.session_state.vehicles = []
-if 'environment' not in st.session_state:
-    st.session_state.environment = Environment()
+if 'market_data' not in st.session_state:
+    st.session_state.market_data = None
+if 'simulator' not in st.session_state:
+    st.session_state.simulator = ChinaUAVMarketSimulator()
 
 
 def main():
-    st.title("🚁 UAV System Interactive Dashboard")
+    st.title("📊 UAV Industry Economic Insights & Market Projections")
+    st.markdown("**Comprehensive Market Analysis, China Dominance, and 2026 Forecasts**")
     st.markdown("---")
     
-    # Sidebar
-    st.sidebar.title("🎛️ Control Panel")
+    # Sidebar navigation
+    st.sidebar.title("📈 Navigation")
     
     page = st.sidebar.selectbox(
-        "Select Page",
-        ["🏠 Overview", "🚁 Single Vehicle", "👥 Multi-Vehicle", "🗺️ Path Planning", "📊 Analytics", "⚙️ Settings"]
+        "Select Analysis",
+        [
+            "🏠 Market Overview",
+            "🇨🇳 China Analysis",
+            "📊 Market Segments",
+            "🌍 Regional Analysis",
+            "💡 Investment Opportunities",
+            "🔮 2026 Projections",
+            "📈 Scenario Analysis",
+            "⚙️ Custom Forecast"
+        ]
     )
     
-    if page == "🏠 Overview":
-        show_overview()
-    elif page == "🚁 Single Vehicle":
-        show_single_vehicle()
-    elif page == "👥 Multi-Vehicle":
-        show_multi_vehicle()
-    elif page == "🗺️ Path Planning":
-        show_path_planning()
-    elif page == "📊 Analytics":
-        show_analytics()
-    elif page == "⚙️ Settings":
-        show_settings()
+    if page == "🏠 Market Overview":
+        show_market_overview()
+    elif page == "🇨🇳 China Analysis":
+        show_china_analysis()
+    elif page == "📊 Market Segments":
+        show_market_segments()
+    elif page == "🌍 Regional Analysis":
+        show_regional_analysis()
+    elif page == "💡 Investment Opportunities":
+        show_investment_opportunities()
+    elif page == "🔮 2026 Projections":
+        show_2026_projections()
+    elif page == "📈 Scenario Analysis":
+        show_scenario_analysis()
+    elif page == "⚙️ Custom Forecast":
+        show_custom_forecast()
 
 
-def show_overview():
-    st.header("📊 System Overview")
+def show_market_overview():
+    st.header("🏠 Global UAV Market Overview")
     
+    # Key metrics
     col1, col2, col3, col4 = st.columns(4)
     
+    projections_2026 = st.session_state.simulator.project_market(2026)
+    projections_2024 = st.session_state.simulator.project_market(2024)
+    
     with col1:
-        st.metric("Active Vehicles", len(st.session_state.vehicles))
+        st.metric(
+            "2024 Market Size",
+            f"${projections_2024['global_market']:.1f}B",
+            delta=f"{projections_2024['global_market'] - 25.0:.1f}B vs 2023"
+        )
     
     with col2:
-        st.metric("Simulation Steps", len(st.session_state.simulation_history))
+        st.metric(
+            "2026 Projected",
+            f"${projections_2026['global_market']:.1f}B",
+            delta=f"+{(projections_2026['global_market'] / projections_2024['global_market'] - 1) * 100:.1f}%"
+        )
     
     with col3:
-        if st.session_state.vehicles:
-            avg_battery = np.mean([v.config.battery_level for v in st.session_state.vehicles])
-            st.metric("Avg Battery", f"{avg_battery:.1f}%")
-        else:
-            st.metric("Avg Battery", "N/A")
+        cagr = 15.8
+        st.metric(
+            "CAGR (2024-2026)",
+            f"{cagr:.1f}%",
+            delta="Strong Growth"
+        )
     
     with col4:
-        st.metric("Environment", "Active" if st.session_state.environment else "None")
+        units_2026 = projections_2026['global_units']
+        st.metric(
+            "Units Sold (2026)",
+            f"{units_2026:.1f}M",
+            delta=f"+{(units_2026 / projections_2024['global_units'] - 1) * 100:.1f}%"
+        )
     
     st.markdown("---")
     
-    # Quick start
-    st.subheader("🚀 Quick Start")
+    # Market growth chart
+    st.subheader("📈 Market Growth Trajectory")
     
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.write("**Create Aerial Vehicle**")
-        if st.button("Create Drone", type="primary"):
-            drone = AerialVehicle(
-                initial_state=State(position=np.array([0, 0, 10])),
-                vehicle_id=f"drone_{len(st.session_state.vehicles) + 1}"
-            )
-            st.session_state.vehicles.append(drone)
-            st.success(f"Created {drone.vehicle_id}")
-            st.rerun()
-    
-    with col2:
-        st.write("**Run Simulation**")
-        if st.button("Run Basic Simulation", type="primary"):
-            if st.session_state.vehicles:
-                run_basic_simulation()
-                st.success("Simulation completed!")
-                st.rerun()
-            else:
-                st.warning("Please create a vehicle first")
-    
-    # Recent simulations
-    if st.session_state.simulation_history:
-        st.subheader("📈 Recent Simulation")
-        latest = st.session_state.simulation_history[-1]
-        
-        if isinstance(latest, dict) and 'vehicles' in latest:
-            # Multi-vehicle simulation
-            fig = go.Figure()
-            for vehicle_id, vehicle_data in latest['vehicles'].items():
-                pos = vehicle_data['state'].position
-                fig.add_trace(go.Scatter3d(
-                    x=[pos[0]],
-                    y=[pos[1]],
-                    z=[pos[2]],
-                    mode='markers',
-                    name=vehicle_id,
-                    marker=dict(size=10)
-                ))
-            fig.update_layout(title="Latest Vehicle Positions", scene=dict(aspectmode='cube'))
-            st.plotly_chart(fig, use_container_width=True)
-
-
-def show_single_vehicle():
-    st.header("🚁 Single Vehicle Simulation")
-    
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        st.subheader("Vehicle Configuration")
-        
-        vehicle_type = st.selectbox("Vehicle Type", ["Aerial", "Ground", "Underwater"])
-        
-        col_x, col_y, col_z = st.columns(3)
-        with col_x:
-            init_x = st.number_input("Initial X (m)", value=0.0)
-        with col_y:
-            init_y = st.number_input("Initial Y (m)", value=0.0)
-        with col_z:
-            init_z = st.number_input("Initial Z (m)", value=10.0 if vehicle_type == "Aerial" else 0.0)
-        
-        max_speed = st.slider("Max Speed (m/s)", 1.0, 50.0, 20.0)
-        mass = st.slider("Mass (kg)", 0.1, 10.0, 1.5)
-        
-        if st.button("Create Vehicle", type="primary"):
-            config = VehicleConfig(max_speed=max_speed, mass=mass)
-            initial_state = State(position=np.array([init_x, init_y, init_z]))
-            
-            if vehicle_type == "Aerial":
-                vehicle = AerialVehicle(initial_state=initial_state, config=config)
-            elif vehicle_type == "Ground":
-                vehicle = GroundVehicle(initial_state=initial_state, config=config)
-            else:
-                vehicle = UnderwaterVehicle(initial_state=initial_state, config=config)
-            
-            st.session_state.vehicles.append(vehicle)
-            st.success(f"Created {vehicle.vehicle_id}")
-            st.rerun()
-    
-    with col2:
-        st.subheader("Simulation Parameters")
-        duration = st.slider("Duration (s)", 1.0, 60.0, 30.0)
-        dt = st.slider("Time Step (s)", 0.01, 0.5, 0.1)
-        
-        if st.session_state.vehicles:
-            selected_vehicle = st.selectbox(
-                "Select Vehicle",
-                [v.vehicle_id for v in st.session_state.vehicles]
-            )
-            
-            if st.button("Run Simulation", type="primary"):
-                vehicle = next(v for v in st.session_state.vehicles if v.vehicle_id == selected_vehicle)
-                
-                def control_policy(state, t):
-                    return np.array([15.0, 0.0, 0.1, 0.0])
-                
-                simulator = Simulator(vehicle, control_policy=control_policy)
-                history = simulator.run(duration=duration, dt=dt, verbose=False)
-                
-                st.session_state.simulation_history.extend(history)
-                st.success(f"Simulation completed: {len(history)} steps")
-                st.rerun()
-    
-    # Display vehicle info
-    if st.session_state.vehicles:
-        st.subheader("📋 Vehicle Status")
-        
-        for vehicle in st.session_state.vehicles:
-            with st.expander(f"🚁 {vehicle.vehicle_id}"):
-                col1, col2, col3 = st.columns(3)
-                
-                pos = vehicle.get_position()
-                vel = vehicle.get_velocity()
-                
-                col1.metric("Position", f"[{pos[0]:.1f}, {pos[1]:.1f}, {pos[2]:.1f}]")
-                col2.metric("Velocity", f"{np.linalg.norm(vel):.2f} m/s")
-                col3.metric("Battery", f"{vehicle.config.battery_level:.1f}%")
-        
-        # Plot trajectory if available
-        if st.session_state.simulation_history:
-            plot_trajectories()
-
-
-def show_multi_vehicle():
-    st.header("👥 Multi-Vehicle Simulation")
-    
-    st.write("**Create Multiple Vehicles**")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        num_vehicles = st.number_input("Number of Vehicles", 1, 10, 3)
-        
-        if st.button("Create Fleet", type="primary"):
-            vehicles = []
-            for i in range(num_vehicles):
-                initial_state = State(position=np.array([i * 10, 0, 10]))
-                vehicle = AerialVehicle(
-                    initial_state=initial_state,
-                    vehicle_id=f"drone_{i+1}"
-                )
-                vehicles.append(vehicle)
-            
-            st.session_state.vehicles = vehicles
-            st.success(f"Created {num_vehicles} vehicles")
-            st.rerun()
-    
-    with col2:
-        duration = st.slider("Simulation Duration (s)", 1.0, 60.0, 30.0)
-        dt = st.slider("Time Step (s)", 0.01, 0.5, 0.1)
-        
-        if st.button("Run Multi-Vehicle Simulation", type="primary"):
-            if len(st.session_state.vehicles) > 1:
-                def control_policy(state, t, all_vehicles):
-                    return np.array([15.0, 0.0, 0.1, 0.0])
-                
-                control_policies = {v.vehicle_id: control_policy for v in st.session_state.vehicles}
-                simulator = MultiVehicleSimulator(
-                    st.session_state.vehicles,
-                    control_policies=control_policies
-                )
-                
-                history = simulator.run(duration=duration, dt=dt, verbose=False)
-                st.session_state.simulation_history.extend(history)
-                st.success("Multi-vehicle simulation completed!")
-                st.rerun()
-            else:
-                st.warning("Please create multiple vehicles first")
-    
-    # Fleet visualization
-    if len(st.session_state.vehicles) > 1:
-        st.subheader("📍 Fleet Positions")
-        
-        fig = go.Figure()
-        
-        colors = px.colors.qualitative.Set3
-        
-        for i, vehicle in enumerate(st.session_state.vehicles):
-            pos = vehicle.get_position()
-            fig.add_trace(go.Scatter3d(
-                x=[pos[0]],
-                y=[pos[1]],
-                z=[pos[2]],
-                mode='markers+text',
-                name=vehicle.vehicle_id,
-                marker=dict(size=10, color=colors[i % len(colors)]),
-                text=[vehicle.vehicle_id],
-                textposition="top center"
-            ))
-        
-        fig.update_layout(
-            title="Fleet Positions",
-            scene=dict(
-                xaxis_title="X (m)",
-                yaxis_title="Y (m)",
-                zaxis_title="Z (m)",
-                aspectmode='cube'
-            ),
-            height=600
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-
-
-def show_path_planning():
-    st.header("🗺️ Path Planning")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("Environment Setup")
-        
-        num_obstacles = st.number_input("Number of Obstacles", 0, 10, 3)
-        
-        obstacles = []
-        for i in range(num_obstacles):
-            with st.expander(f"Obstacle {i+1}"):
-                col_x, col_y, col_z = st.columns(3)
-                with col_x:
-                    obs_x = st.number_input(f"X {i+1}", value=30.0 + i*20, key=f"obs_x_{i}")
-                with col_y:
-                    obs_y = st.number_input(f"Y {i+1}", value=20.0 + i*15, key=f"obs_y_{i}")
-                with col_z:
-                    obs_z = st.number_input(f"Z {i+1}", value=5.0, key=f"obs_z_{i}")
-                
-                radius = st.number_input(f"Radius {i+1}", 1.0, 20.0, 10.0, key=f"obs_r_{i}")
-                
-                obstacles.append(Obstacle(
-                    position=np.array([obs_x, obs_y, obs_z]),
-                    radius=radius
-                ))
-        
-        if st.button("Update Environment"):
-            st.session_state.environment = Environment(obstacles=obstacles)
-            st.success("Environment updated")
-    
-    with col2:
-        st.subheader("Path Planning")
-        
-        planner_type = st.selectbox("Planner Type", ["A*", "RRT"])
-        
-        col_sx, col_sy, col_sz = st.columns(3)
-        with col_sx:
-            start_x = st.number_input("Start X", value=0.0)
-        with col_sy:
-            start_y = st.number_input("Start Y", value=0.0)
-        with col_sz:
-            start_z = st.number_input("Start Z", value=10.0)
-        
-        col_gx, col_gy, col_gz = st.columns(3)
-        with col_gx:
-            goal_x = st.number_input("Goal X", value=100.0)
-        with col_gy:
-            goal_y = st.number_input("Goal Y", value=100.0)
-        with col_gz:
-            goal_z = st.number_input("Goal Z", value=15.0)
-        
-        start = np.array([start_x, start_y, start_z])
-        goal = np.array([goal_x, goal_y, goal_z])
-        
-        if st.button("Plan Path", type="primary"):
-            if planner_type == "A*":
-                planner = AStarPlanner(st.session_state.environment, resolution=5.0)
-            else:
-                planner = RRTPlanner(st.session_state.environment, max_iterations=500)
-            
-            with st.spinner("Planning path..."):
-                path = planner.plan(start, goal)
-            
-            st.success(f"Path planned: {len(path)} waypoints")
-            
-            # Visualize path
-            if path:
-                fig = go.Figure()
-                
-                path_array = np.array(path)
-                
-                # Plot obstacles
-                for obs in obstacles:
-                    fig.add_trace(go.Scatter3d(
-                        x=[obs.position[0]],
-                        y=[obs.position[1]],
-                        z=[obs.position[2]],
-                        mode='markers',
-                        marker=dict(size=obs.radius*2, color='red', opacity=0.5),
-                        name=f"Obstacle at [{obs.position[0]:.0f}, {obs.position[1]:.0f}]"
-                    ))
-                
-                # Plot path
-                fig.add_trace(go.Scatter3d(
-                    x=path_array[:, 0],
-                    y=path_array[:, 1],
-                    z=path_array[:, 2],
-                    mode='lines+markers',
-                    name='Planned Path',
-                    line=dict(color='blue', width=4),
-                    marker=dict(size=5)
-                ))
-                
-                # Start and goal
-                fig.add_trace(go.Scatter3d(
-                    x=[start[0], goal[0]],
-                    y=[start[1], goal[1]],
-                    z=[start[2], goal[2]],
-                    mode='markers',
-                    marker=dict(size=10, color=['green', 'red']),
-                    name='Start/Goal'
-                ))
-                
-                fig.update_layout(
-                    title="Path Planning Result",
-                    scene=dict(aspectmode='cube'),
-                    height=600
-                )
-                
-                st.plotly_chart(fig, use_container_width=True)
-
-
-def show_analytics():
-    st.header("📊 Analytics & Visualization")
-    
-    if not st.session_state.simulation_history:
-        st.info("No simulation data available. Run a simulation first.")
-        return
-    
-    tab1, tab2, tab3 = st.tabs(["Trajectories", "State History", "Forecasting"])
-    
-    with tab1:
-        plot_trajectories()
-    
-    with tab2:
-        if st.session_state.simulation_history:
-            plot_state_history()
-    
-    with tab3:
-        show_forecasting()
-
-
-def plot_trajectories():
-    if not st.session_state.simulation_history:
-        return
+    years = [2024, 2025, 2026]
+    market_values = [
+        st.session_state.simulator.project_market(y)['global_market'] 
+        for y in years
+    ]
     
     fig = go.Figure()
     
-    # Get latest simulation
-    latest = st.session_state.simulation_history[-1]
-    
-    if isinstance(latest, dict):
-        if 'vehicles' in latest:
-            # Multi-vehicle
-            for vehicle_id, vehicle_data in latest['vehicles'].items():
-                pos = vehicle_data['state'].position
-                fig.add_trace(go.Scatter3d(
-                    x=[pos[0]],
-                    y=[pos[1]],
-                    z=[pos[2]],
-                    mode='markers',
-                    name=vehicle_id
-                ))
-        elif 'state' in latest:
-            # Single vehicle
-            pos = latest['state'].position
-            fig.add_trace(go.Scatter3d(
-                x=[pos[0]],
-                y=[pos[1]],
-                z=[pos[2]],
-                mode='markers',
-                name='Vehicle'
-            ))
+    fig.add_trace(go.Scatter(
+        x=years,
+        y=market_values,
+        mode='lines+markers',
+        name='Global Market',
+        line=dict(color='#1f77b4', width=3),
+        marker=dict(size=10)
+    ))
     
     fig.update_layout(
-        title="Vehicle Trajectories",
-        scene=dict(aspectmode='cube'),
-        height=500
+        title="UAV Market Value Growth (2024-2026)",
+        xaxis_title="Year",
+        yaxis_title="Market Value (Billion USD)",
+        height=400,
+        hovermode='x unified'
     )
     
     st.plotly_chart(fig, use_container_width=True)
+    
+    # Market drivers
+    st.subheader("🚀 Key Market Drivers")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown("""
+        **Commercial Applications**
+        - Logistics & Delivery
+        - Agriculture
+        - Infrastructure Inspection
+        - Real Estate
+        """)
+    
+    with col2:
+        st.markdown("""
+        **Technology Advances**
+        - AI & Machine Learning
+        - Battery Improvements
+        - Enhanced Sensors
+        - 5G Connectivity
+        """)
+    
+    with col3:
+        st.markdown("""
+        **Regulatory Evolution**
+        - BVLOS Approvals
+        - UTM Systems
+        - Standardized Rules
+        - Privacy Frameworks
+        """)
 
 
-def plot_state_history():
-    if not st.session_state.simulation_history:
-        return
+def show_china_analysis():
+    st.header("🇨🇳 China's Market Dominance Analysis")
     
-    # Extract state data
-    timestamps = []
-    positions_x = []
-    positions_y = []
-    positions_z = []
-    velocities = []
+    projections_2026 = st.session_state.simulator.project_market(2026)
+    projections_2024 = st.session_state.simulator.project_market(2024)
     
-    for step in st.session_state.simulation_history:
-        if isinstance(step, dict) and 'state' in step:
-            timestamps.append(step['timestamp'])
-            pos = step['state'].position
-            positions_x.append(pos[0])
-            positions_y.append(pos[1])
-            positions_z.append(pos[2])
-            velocities.append(np.linalg.norm(step['state'].velocity))
+    # China metrics
+    col1, col2, col3, col4 = st.columns(4)
     
-    if not timestamps:
-        return
+    with col1:
+        st.metric(
+            "Market Share",
+            f"{projections_2026['china_market_share']*100:.1f}%",
+            delta="Dominant Position"
+        )
+    
+    with col2:
+        st.metric(
+            "Total Market Value (2026)",
+            f"${projections_2026['china_total']:.1f}B",
+            delta=f"+{((projections_2026['china_total'] / projections_2024['china_total']) - 1) * 100:.1f}%"
+        )
+    
+    with col3:
+        st.metric(
+            "Export Value (2026)",
+            f"${projections_2026['china_export']:.1f}B",
+            delta="Global Leader"
+        )
+    
+    with col4:
+        st.metric(
+            "Manufacturing Capacity",
+            f"{projections_2026['china_capacity']:.1f}M units",
+            delta="World's Largest"
+        )
+    
+    st.markdown("---")
+    
+    # China vs Global comparison
+    st.subheader("📊 China vs Global Market")
     
     fig = make_subplots(
-        rows=2, cols=2,
-        subplot_titles=('Position X', 'Position Y', 'Position Z', 'Speed'),
-        specs=[[{"secondary_y": False}, {"secondary_y": False}],
-               [{"secondary_y": False}, {"secondary_y": False}]]
+        rows=1, cols=2,
+        subplot_titles=('Market Value Comparison', 'Market Share Over Time'),
+        specs=[[{"type": "bar"}, {"type": "scatter"}]]
     )
     
-    fig.add_trace(go.Scatter(x=timestamps, y=positions_x, name='X'), row=1, col=1)
-    fig.add_trace(go.Scatter(x=timestamps, y=positions_y, name='Y'), row=1, col=2)
-    fig.add_trace(go.Scatter(x=timestamps, y=positions_z, name='Z'), row=2, col=1)
-    fig.add_trace(go.Scatter(x=timestamps, y=velocities, name='Speed'), row=2, col=2)
+    years = [2024, 2025, 2026]
+    global_markets = [st.session_state.simulator.project_market(y)['global_market'] for y in years]
+    china_totals = [st.session_state.simulator.project_market(y)['china_total'] for y in years]
+    china_shares = [st.session_state.simulator.project_market(y)['china_market_share'] * 100 for y in years]
     
-    fig.update_layout(height=600, title_text="State History")
+    # Bar chart
+    fig.add_trace(
+        go.Bar(name='Global Market', x=years, y=global_markets, marker_color='#1f77b4'),
+        row=1, col=1
+    )
+    fig.add_trace(
+        go.Bar(name='China Total', x=years, y=china_totals, marker_color='#ff7f0e'),
+        row=1, col=1
+    )
+    
+    # Line chart
+    fig.add_trace(
+        go.Scatter(x=years, y=china_shares, mode='lines+markers', name='China Share %', line=dict(color='red', width=3)),
+        row=1, col=2
+    )
+    
+    fig.update_layout(height=400, showlegend=True, title_text="China Market Position")
+    fig.update_yaxes(title_text="Billion USD", row=1, col=1)
+    fig.update_yaxes(title_text="Market Share (%)", row=1, col=2)
+    
     st.plotly_chart(fig, use_container_width=True)
+    
+    # Key Chinese players
+    st.subheader("🏢 Key Chinese Players")
+    
+    players_data = {
+        'Company': ['DJI', 'Autel Robotics', 'Ehang', 'Zero Zero Robotics'],
+        'Market Share': [70, 4, 2, 1],
+        'Focus': ['Consumer/Enterprise', 'Professional', 'Urban Air Mobility', 'Consumer Selfie'],
+        'Revenue (Est.)': ['$3B+', '$200M+', '$50M+', '$30M+']
+    }
+    
+    df_players = pd.DataFrame(players_data)
+    st.dataframe(df_players, use_container_width=True, hide_index=True)
+    
+    # China advantages
+    st.subheader("💪 China's Strategic Advantages")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("""
+        **Manufacturing Ecosystem**
+        - Complete supply chain in Shenzhen
+        - 30% cost advantage
+        - Rapid prototyping
+        - Component suppliers network
+        """)
+        
+        st.markdown("""
+        **Government Support**
+        - "Made in China 2025" initiative
+        - Development subsidies
+        - Domestic market protection
+        - Export promotion
+        """)
+    
+    with col2:
+        st.markdown("""
+        **Technical Innovation**
+        - Leading AI/ML integration
+        - Advanced gimbal technology
+        - Battery optimization
+        - Compact design expertise
+        """)
+        
+        st.markdown("""
+        **Market Access**
+        - 1.4B population domestic market
+        - Established distribution
+        - Strong e-commerce platforms
+        - Global export network
+        """)
 
 
-def show_forecasting():
-    st.subheader("Trajectory Forecasting")
+def show_market_segments():
+    st.header("📊 Market Segmentation Analysis")
     
-    if not st.session_state.vehicles:
-        st.warning("Please create a vehicle first")
-        return
+    projections_2026 = st.session_state.simulator.project_market(2026)
+    projections_2024 = st.session_state.simulator.project_market(2024)
     
-    selected_vehicle = st.selectbox(
-        "Select Vehicle",
-        [v.vehicle_id for v in st.session_state.vehicles]
+    # Segment breakdown
+    segments = {
+        'Commercial': projections_2026['commercial'],
+        'Consumer': projections_2026['consumer'],
+        'Agriculture': projections_2026['agriculture'],
+        'Military': 7.2,  # From industry data
+    }
+    
+    # Pie chart
+    fig = go.Figure(data=[go.Pie(
+        labels=list(segments.keys()),
+        values=list(segments.values()),
+        hole=0.4,
+        marker_colors=['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']
+    )])
+    
+    fig.update_layout(
+        title="Market Share by Segment (2026)",
+        height=400
     )
     
-    vehicle = next(v for v in st.session_state.vehicles if v.vehicle_id == selected_vehicle)
+    st.plotly_chart(fig, use_container_width=True)
     
-    method = st.selectbox("Forecasting Method", ["constant_velocity", "linear", "polynomial"])
-    horizon = st.slider("Forecast Horizon (s)", 1.0, 30.0, 10.0)
+    # Segment growth comparison
+    st.subheader("📈 Segment Growth Comparison")
     
-    if st.button("Generate Forecast"):
-        forecaster = TrajectoryForecaster(method=method, horizon=horizon)
+    segment_data = {
+        'Segment': ['Commercial', 'Consumer', 'Agriculture', 'Military'],
+        '2024 (B$)': [11.4, 10.0, 1.4, 5.7],
+        '2026 (B$)': [17.8, 11.5, 2.1, 7.2],
+        'CAGR (%)': [25.0, 7.2, 22.5, 12.3]
+    }
+    
+    df_segments = pd.DataFrame(segment_data)
+    df_segments['Growth'] = ((df_segments['2026 (B$)'] / df_segments['2024 (B$)']) - 1) * 100
+    
+    # Bar chart
+    fig = go.Figure()
+    
+    fig.add_trace(go.Bar(
+        name='2024',
+        x=df_segments['Segment'],
+        y=df_segments['2024 (B$)'],
+        marker_color='#1f77b4'
+    ))
+    
+    fig.add_trace(go.Bar(
+        name='2026',
+        x=df_segments['Segment'],
+        y=df_segments['2026 (B$)'],
+        marker_color='#ff7f0e'
+    ))
+    
+    fig.update_layout(
+        title="Market Segment Growth (2024-2026)",
+        xaxis_title="Segment",
+        yaxis_title="Market Value (Billion USD)",
+        barmode='group',
+        height=400
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Detailed segment table
+    st.subheader("📋 Detailed Segment Analysis")
+    st.dataframe(df_segments, use_container_width=True, hide_index=True)
+    
+    # Application breakdown
+    st.subheader("🎯 Key Applications by Segment")
+    
+    applications = {
+        'Commercial': {
+            'Logistics & Delivery': 5.2,
+            'Inspection & Monitoring': 4.8,
+            'Construction': 1.9,
+            'Energy': 1.6,
+            'Real Estate': 1.2,
+            'Others': 3.1
+        },
+        'Consumer': {
+            'Photography/Videography': 6.5,
+            'Racing/Hobby': 2.8,
+            'Selfie Drones': 1.5,
+            'Educational': 0.7
+        },
+        'Agriculture': {
+            'Crop Monitoring': 0.8,
+            'Spraying': 0.7,
+            'Mapping': 0.4,
+            'Livestock': 0.2
+        }
+    }
+    
+    for segment, apps in applications.items():
+        with st.expander(f"{segment} Applications"):
+            fig = go.Figure(data=[go.Bar(
+                x=list(apps.keys()),
+                y=list(apps.values()),
+                marker_color='#2ca02c'
+            )])
+            fig.update_layout(
+                title=f"{segment} Market Breakdown (2026)",
+                xaxis_title="Application",
+                yaxis_title="Market Value (Billion USD)",
+                height=300
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+
+def show_regional_analysis():
+    st.header("🌍 Regional Market Analysis")
+    
+    # Regional data
+    regional_data = {
+        'Region': ['Asia-Pacific', 'North America', 'Europe', 'Rest of World'],
+        '2024 (B$)': [12.8, 8.0, 5.1, 2.6],
+        '2026 (B$)': [18.5, 10.4, 6.5, 3.8],
+        'CAGR (%)': [18.5, 14.2, 12.8, 16.3],
+        'Market Share (%)': [45, 28, 18, 9]
+    }
+    
+    df_regions = pd.DataFrame(regional_data)
+    
+    # Regional comparison chart
+    fig = go.Figure()
+    
+    fig.add_trace(go.Bar(
+        name='2024',
+        x=df_regions['Region'],
+        y=df_regions['2024 (B$)'],
+        marker_color='#1f77b4'
+    ))
+    
+    fig.add_trace(go.Bar(
+        name='2026',
+        x=df_regions['Region'],
+        y=df_regions['2026 (B$)'],
+        marker_color='#ff7f0e'
+    ))
+    
+    fig.update_layout(
+        title="Regional Market Comparison",
+        xaxis_title="Region",
+        yaxis_title="Market Value (Billion USD)",
+        barmode='group',
+        height=400
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Market share pie chart
+    fig = go.Figure(data=[go.Pie(
+        labels=df_regions['Region'],
+        values=df_regions['Market Share (%)'],
+        hole=0.3,
+        marker_colors=['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']
+    )])
+    
+    fig.update_layout(
+        title="Regional Market Share (2026)",
+        height=400
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Regional details
+    st.subheader("📋 Regional Market Details")
+    st.dataframe(df_regions, use_container_width=True, hide_index=True)
+    
+    # Key markets by region
+    st.subheader("🗺️ Key Markets by Region")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("""
+        **Asia-Pacific**
+        - China: Manufacturing hub, largest market
+        - Japan: Advanced robotics, commercial apps
+        - India: Emerging market, agriculture focus
+        - South Korea: Defense, logistics
+        """)
         
-        # Update with history if available
-        if st.session_state.simulation_history:
-            for step in st.session_state.simulation_history[-20:]:
-                if isinstance(step, dict) and 'state' in step:
-                    forecaster.update_history(step['state'])
+        st.markdown("""
+        **North America**
+        - United States: Largest commercial market
+        - Canada: Resource extraction
+        """)
+    
+    with col2:
+        st.markdown("""
+        **Europe**
+        - UK: Advanced regulations
+        - Germany: Industrial applications
+        - France: Defense and security
+        """)
         
-        forecast = forecaster.forecast(vehicle.get_state(), horizon=horizon)
+        st.markdown("""
+        **Rest of World**
+        - Latin America: Agricultural growth
+        - Middle East: Defense applications
+        - Africa: Emerging opportunities
+        """)
+
+
+def show_investment_opportunities():
+    st.header("💡 Investment Opportunities")
+    
+    # High-growth segments
+    st.subheader("🚀 High-Growth Investment Segments")
+    
+    investment_data = {
+        'Segment': [
+            'Autonomous Delivery',
+            'Urban Air Mobility',
+            'Agricultural Drones',
+            'Drone-as-a-Service',
+            'Enterprise Software',
+            'Sensor Technology'
+        ],
+        'CAGR (%)': [35, 45, 22.5, 28, 32, 18],
+        'Market Size 2026 (B$)': [5.2, 2.8, 2.1, 1.5, 1.2, 6.8],
+        'Investment Required': ['$500M+', '$2B+', '$200M+', '$100M+', '$150M+', '$300M+']
+    }
+    
+    df_invest = pd.DataFrame(investment_data)
+    
+    # Investment opportunity chart
+    fig = go.Figure()
+    
+    fig.add_trace(go.Bar(
+        x=df_invest['Segment'],
+        y=df_invest['CAGR (%)'],
+        marker_color=df_invest['CAGR (%)'],
+        marker_colorscale='Viridis',
+        text=df_invest['CAGR (%)'],
+        texttemplate='%{text:.1f}%',
+        textposition='outside'
+    ))
+    
+    fig.update_layout(
+        title="Investment Opportunities by Growth Rate",
+        xaxis_title="Segment",
+        yaxis_title="CAGR (%)",
+        height=400
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Investment table
+    st.subheader("📊 Investment Opportunity Details")
+    st.dataframe(df_invest, use_container_width=True, hide_index=True)
+    
+    # Key players by segment
+    st.subheader("🏢 Key Players by Investment Segment")
+    
+    players_by_segment = {
+        'Autonomous Delivery': ['Amazon Prime Air', 'Wing (Alphabet)', 'JD.com'],
+        'Urban Air Mobility': ['Ehang', 'Joby Aviation', 'Volocopter'],
+        'Agricultural Drones': ['DJI Agras', 'XAG', 'PrecisionHawk'],
+        'Drone-as-a-Service': ['DroneDeploy', 'Measure', 'Skyward']
+    }
+    
+    for segment, players in players_by_segment.items():
+        with st.expander(segment):
+            for player in players:
+                st.write(f"- {player}")
+    
+    # Regional investment hotspots
+    st.subheader("🌍 Regional Investment Hotspots")
+    
+    hotspots = {
+        'China': 'Manufacturing, R&D, domestic market expansion',
+        'United States': 'Commercial applications, urban air mobility',
+        'Europe': 'Industrial automation, regulatory innovation',
+        'India': 'Agricultural applications, logistics',
+        'Southeast Asia': 'E-commerce delivery, infrastructure'
+    }
+    
+    for region, focus in hotspots.items():
+        st.markdown(f"**{region}**: {focus}")
+
+
+def show_2026_projections():
+    st.header("🔮 2026 Market Projections")
+    
+    projections_2026 = st.session_state.simulator.project_market(2026)
+    
+    # Key projections
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric(
+            "Global Market",
+            f"${projections_2026['global_market']:.1f}B",
+            delta="15.8% CAGR"
+        )
+    
+    with col2:
+        st.metric(
+            "Units Sold",
+            f"{projections_2026['global_units']:.1f}M",
+            delta="19.2% CAGR"
+        )
+    
+    with col3:
+        st.metric(
+            "China Share",
+            f"{projections_2026['china_market_share']*100:.1f}%",
+            delta="Maintained"
+        )
+    
+    st.markdown("---")
+    
+    # Detailed forecast table
+    st.subheader("📋 Detailed 2026 Forecast")
+    
+    forecast_df = st.session_state.simulator.generate_forecast_dataframe(2024, 2026)
+    st.dataframe(forecast_df, use_container_width=True, hide_index=True)
+    
+    # Key predictions
+    st.subheader("🎯 Key 2026 Predictions")
+    
+    predictions = [
+        {
+            'Category': 'Market Consolidation',
+            'Prediction': 'Top 5 companies will control 75% of the market'
+        },
+        {
+            'Category': 'Technology Breakthroughs',
+            'Prediction': 'Autonomous delivery in 500+ cities, AI in 90% of commercial drones'
+        },
+        {
+            'Category': 'Regulatory Evolution',
+            'Prediction': 'BVLOS operations approved in 50+ countries, UTM systems deployed globally'
+        },
+        {
+            'Category': 'New Applications',
+            'Prediction': 'Last-mile delivery ($5.2B), Urban air taxis launch, 15% of farms using drones'
+        },
+        {
+            'Category': "China's Position",
+            'Prediction': 'Maintains 65-70% market share, $18-20B export value, 12M+ units annually'
+        }
+    ]
+    
+    for pred in predictions:
+        with st.expander(pred['Category']):
+            st.write(pred['Prediction'])
+    
+    # Technology impact projections
+    st.subheader("🔬 Technology Impact Projections")
+    
+    tech_impact = {
+        'Technology': ['AI & Autonomy', 'Battery Tech', 'Sensors', '5G Connectivity'],
+        'Market Impact 2026 (B$)': [12.5, 8.2, 6.8, 4.5],
+        'Key Benefit': [
+            'Fully autonomous operations',
+            '60+ min flight time',
+            'Advanced environmental awareness',
+            'Real-time data transmission'
+        ]
+    }
+    
+    df_tech = pd.DataFrame(tech_impact)
+    
+    fig = go.Figure(data=[go.Bar(
+        x=df_tech['Technology'],
+        y=df_tech['Market Impact 2026 (B$)'],
+        marker_color='#2ca02c',
+        text=df_tech['Market Impact 2026 (B$)'],
+        texttemplate='$%{text:.1f}B',
+        textposition='outside'
+    )])
+    
+    fig.update_layout(
+        title="Technology Market Impact (2026)",
+        xaxis_title="Technology",
+        yaxis_title="Market Value (Billion USD)",
+        height=400
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+    
+    st.dataframe(df_tech, use_container_width=True, hide_index=True)
+
+
+def show_scenario_analysis():
+    st.header("📈 Scenario Analysis")
+    
+    scenarios = st.session_state.simulator.simulate_scenarios(2026)
+    
+    # Scenario comparison
+    scenario_names = list(scenarios.keys())
+    global_markets = [scenarios[s]['global_market'] for s in scenario_names]
+    china_totals = [scenarios[s]['china_total'] for s in scenario_names]
+    
+    fig = make_subplots(
+        rows=1, cols=2,
+        subplot_titles=('Global Market by Scenario', 'China Market by Scenario'),
+        specs=[[{"type": "bar"}, {"type": "bar"}]]
+    )
+    
+    colors = {'baseline': '#1f77b4', 'optimistic': '#2ca02c', 'pessimistic': '#d62728'}
+    
+    fig.add_trace(
+        go.Bar(x=scenario_names, y=global_markets, marker_color=[colors[s] for s in scenario_names], name='Global'),
+        row=1, col=1
+    )
+    
+    fig.add_trace(
+        go.Bar(x=scenario_names, y=china_totals, marker_color=[colors[s] for s in scenario_names], name='China'),
+        row=1, col=2
+    )
+    
+    fig.update_layout(height=400, showlegend=False, title_text="2026 Scenario Comparison")
+    fig.update_yaxes(title_text="Billion USD", row=1, col=1)
+    fig.update_yaxes(title_text="Billion USD", row=1, col=2)
+    
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Scenario details
+    st.subheader("📊 Scenario Details")
+    
+    for scenario_name, scenario_data in scenarios.items():
+        with st.expander(f"{scenario_name.upper()} Scenario"):
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric("Global Market", f"${scenario_data['global_market']:.2f}B")
+            with col2:
+                st.metric("China Total", f"${scenario_data['china_total']:.2f}B")
+            with col3:
+                st.metric("China Share", f"{scenario_data['china_market_share']*100:.1f}%")
+            
+            if scenario_name == 'optimistic':
+                st.info("""
+                **Assumptions:**
+                - Faster market growth (20% higher CAGR)
+                - Strong China export growth
+                - Accelerated technology adoption
+                - Favorable regulatory environment
+                """)
+            elif scenario_name == 'pessimistic':
+                st.warning("""
+                **Assumptions:**
+                - Slower market growth (15% lower CAGR)
+                - Increased competition reduces China share
+                - Regulatory delays
+                - Economic headwinds
+                """)
+            else:
+                st.success("""
+                **Assumptions:**
+                - Current growth trends continue
+                - China maintains market dominance
+                - Steady technology adoption
+                - Moderate regulatory evolution
+                """)
+
+
+def show_custom_forecast():
+    st.header("⚙️ Custom Market Forecast")
+    
+    st.subheader("📊 Forecast Parameters")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        start_year = st.number_input("Start Year", 2024, 2030, 2024)
+        end_year = st.number_input("End Year", 2024, 2030, 2026)
         
-        # Plot forecast
+        if end_year <= start_year:
+            st.error("End year must be greater than start year")
+            return
+    
+    with col2:
+        growth_multiplier = st.slider("Growth Rate Multiplier", 0.5, 2.0, 1.0, 0.1)
+        china_share = st.slider("China Market Share (%)", 50.0, 80.0, 70.0, 1.0)
+    
+    if st.button("Generate Custom Forecast", type="primary"):
+        # Adjust growth rates
+        original_rates = st.session_state.simulator.growth_rates.copy()
+        for key in st.session_state.simulator.growth_rates:
+            st.session_state.simulator.growth_rates[key] *= growth_multiplier
+        
+        # Adjust China share
+        original_share = st.session_state.simulator.baseline_2024['china_market_share']
+        st.session_state.simulator.baseline_2024['china_market_share'] = china_share / 100
+        
+        # Generate forecast
+        forecast_df = st.session_state.simulator.generate_forecast_dataframe(start_year, end_year)
+        
+        # Restore original values
+        st.session_state.simulator.growth_rates = original_rates
+        st.session_state.simulator.baseline_2024['china_market_share'] = original_share
+        
+        # Display results
+        st.subheader("📈 Custom Forecast Results")
+        st.dataframe(forecast_df, use_container_width=True, hide_index=True)
+        
+        # Plot custom forecast
         fig = go.Figure()
         
-        current_pos = vehicle.get_position()
-        forecast_array = np.array(forecast)
-        
-        # Current position
-        fig.add_trace(go.Scatter3d(
-            x=[current_pos[0]],
-            y=[current_pos[1]],
-            z=[current_pos[2]],
-            mode='markers',
-            marker=dict(size=10, color='green'),
-            name='Current'
+        fig.add_trace(go.Scatter(
+            x=forecast_df['Year'],
+            y=forecast_df['Global_Market_Billions'],
+            mode='lines+markers',
+            name='Global Market',
+            line=dict(color='#1f77b4', width=3)
         ))
         
-        # Forecast
-        fig.add_trace(go.Scatter3d(
-            x=forecast_array[:, 0],
-            y=forecast_array[:, 1],
-            z=forecast_array[:, 2],
+        fig.add_trace(go.Scatter(
+            x=forecast_df['Year'],
+            y=forecast_df['China_Total_Billions'],
             mode='lines+markers',
-            name='Forecast',
-            line=dict(color='blue', width=4),
-            marker=dict(size=4)
+            name='China Total',
+            line=dict(color='#ff7f0e', width=3)
         ))
         
         fig.update_layout(
-            title=f"Trajectory Forecast ({method})",
-            scene=dict(aspectmode='cube'),
-            height=500
+            title=f"Custom Forecast ({start_year}-{end_year})",
+            xaxis_title="Year",
+            yaxis_title="Market Value (Billion USD)",
+            height=400
         )
         
         st.plotly_chart(fig, use_container_width=True)
-
-
-def show_settings():
-    st.header("⚙️ Settings")
-    
-    st.subheader("System Configuration")
-    
-    st.write("**Default Parameters**")
-    
-    default_max_speed = st.slider("Default Max Speed (m/s)", 1.0, 50.0, 20.0)
-    default_mass = st.slider("Default Mass (kg)", 0.1, 10.0, 1.5)
-    
-    if st.button("Reset Vehicles"):
-        st.session_state.vehicles = []
-        st.success("Vehicles reset")
-        st.rerun()
-    
-    if st.button("Clear History"):
-        st.session_state.simulation_history = []
-        st.success("History cleared")
-        st.rerun()
-
-
-def run_basic_simulation():
-    """Run a basic simulation for demonstration."""
-    if not st.session_state.vehicles:
-        # Create a default vehicle
-        vehicle = AerialVehicle(
-            initial_state=State(position=np.array([0, 0, 10])),
-            vehicle_id="demo_drone"
+        
+        # Download option
+        csv = forecast_df.to_csv(index=False)
+        st.download_button(
+            label="Download Forecast CSV",
+            data=csv,
+            file_name=f"custom_forecast_{start_year}_{end_year}.csv",
+            mime="text/csv"
         )
-        st.session_state.vehicles.append(vehicle)
-    
-    vehicle = st.session_state.vehicles[0]
-    
-    def control_policy(state, t):
-        return np.array([15.0, 0.0, 0.1, 0.0])
-    
-    simulator = Simulator(vehicle, control_policy=control_policy)
-    history = simulator.run(duration=30.0, dt=0.1, verbose=False)
-    
-    st.session_state.simulation_history.extend(history)
 
 
 if __name__ == "__main__":
     main()
-
