@@ -249,7 +249,7 @@ def main():
     simulator = ChinaUAVMarketSimulator()
     
     # Generate 2026 projections
-    print("\n📊 2026 Market Projections:")
+    print("\n2026 Market Projections:")
     print("-" * 60)
     projections_2026 = simulator.project_market(2026)
     
@@ -263,14 +263,14 @@ def main():
     print(f"Dominance Score: {projections_2026['china_dominance_score']:.1f}/100")
     
     # Market segments
-    print("\n📈 Market Segments (2026):")
+    print("\nMarket Segments (2026):")
     print("-" * 60)
     print(f"Commercial: ${projections_2026['commercial']:.2f} billion")
     print(f"Consumer: ${projections_2026['consumer']:.2f} billion")
     print(f"Agriculture: ${projections_2026['agriculture']:.2f} billion")
     
     # Scenarios
-    print("\n🎯 Market Scenarios (2026):")
+    print("\nMarket Scenarios (2026):")
     print("-" * 60)
     scenarios = simulator.simulate_scenarios(2026)
     
@@ -281,7 +281,7 @@ def main():
         print(f"  China Share: {scenario_data['china_market_share']*100:.1f}%")
     
     # Generate forecast dataframe
-    print("\n📋 Generating Forecast Data...")
+    print("\nGenerating Forecast Data...")
     df = simulator.generate_forecast_dataframe(2024, 2026)
     print("\nForecast Data:")
     print(df.to_string(index=False))
@@ -289,10 +289,10 @@ def main():
     # Save to CSV
     csv_path = 'china_uav_forecast_2024_2026.csv'
     df.to_csv(csv_path, index=False)
-    print(f"\n✅ Forecast data saved to {csv_path}")
+    print(f"\nForecast data saved to {csv_path}")
     
     # Plot projections
-    print("\n📊 Generating visualization...")
+    print("\nGenerating visualization...")
     simulator.plot_projections('china_uav_projections.png')
     
     print("\n" + "=" * 60)
